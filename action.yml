@@ -1,0 +1,434 @@
+name: 'Pipedream ML Training'
+description: 'Train machine learning models on AWS SageMaker with zero infrastructure setup'
+author: 'Pipedream'
+
+branding:
+  icon: 'zap'
+  color: 'blue'
+
+inputs:
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # REQUIRED INPUTS
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  api-key:
+    description: 'Pipedream API key (get from https://pipedream.in/api-keys)'
+    required: true
+
+  entry-point:
+    description: 'Training script entry point (e.g., train.py)'
+    required: true
+    default: 'train.py'
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # EXECUTION MODE (Choose ONE: Script Mode OR Docker Mode)
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Script Mode: Use framework + code-path + dataset
+  framework:
+    description: |
+      ML framework for Script Mode: pytorch, tensorflow, sklearn, xgboost, huggingface.
+      Leave empty if using custom Docker image.
+    required: false
+
+  code-path:
+    description: 'Path to training code directory (Script Mode)'
+    required: false
+    default: '.'
+
+  dataset:
+    description: |
+      Dataset ID (e.g., "ds_abc123-def456-7890").
+      Get dataset ID from upload-dataset action or 'pdtrain dataset list'.
+    required: false
+
+  # Docker Mode: Use image (no framework needed)
+  image:
+    description: |
+      Custom Docker image URI (e.g., 123456.dkr.ecr.us-east-1.amazonaws.com/my-trainer:latest).
+      Use this for Docker Mode instead of framework.
+    required: false
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # FRAMEWORK CONFIGURATION (Script Mode only)
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  framework-version:
+    description: |
+      Framework version. Examples:
+        PyTorch: 2.2.0, 2.1.0
+        TensorFlow: 2.13.0, 2.12.0
+        XGBoost: 1.7-1, 1.6-1
+        scikit-learn: 1.4.2, 1.3.0
+    required: false
+
+  python-version:
+    description: 'Python version: py38, py39, py310, py311'
+    required: false
+    default: 'py310'
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # HYPERPARAMETERS / PARAMETERS
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  hyperparameters:
+    description: |
+      Hyperparameters as YAML (Script Mode).
+      Example:
+        hyperparameters: |
+          epochs: 10
+          learning_rate: 0.001
+          batch_size: 32
+    required: false
+
+  parameters:
+    description: |
+      Parameters for Docker Mode (alternative to hyperparameters).
+      Example:
+        parameters: |
+          fit_intercept: true
+          normalize: false
+    required: false
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # WORKFLOW BEHAVIOR
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  wait-for-completion:
+    description: 'Wait for training to complete (true/false)'
+    required: false
+    default: 'true'
+
+  download-artifacts:
+    description: 'Download training artifacts after completion (true/false)'
+    required: false
+    default: 'true'
+
+  artifacts-path:
+    description: 'Local path to download artifacts'
+    required: false
+    default: './artifacts'
+
+  bundle-name:
+    description: 'Custom bundle name (default: auto-generated from repo/commit)'
+    required: false
+
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # ADVANCED OPTIONS
+  # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  api-url:
+    description: 'Orchestrator API URL'
+    required: false
+    default: 'https://ml-orchestrator.pipedream.in'
+
+  exclude-patterns:
+    description: 'Comma-separated glob patterns to exclude from bundle upload'
+    required: false
+    default: '*.pyc,__pycache__,.git,.venv,node_modules,*.egg-info'
+
+  max-cost-usd:
+    description: 'Maximum allowed cost in USD (fail workflow if estimated cost exceeds this)'
+    required: false
+
+  timeout-minutes:
+    description: 'GitHub Actions job timeout in minutes'
+    required: false
+    default: '120'
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# OUTPUTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+outputs:
+  run-id:
+    description: 'Training run ID'
+    value: ${{ steps.training.outputs.run_id }}
+
+  status:
+    description: 'Final training status (completed, failed, stopped)'
+    value: ${{ steps.training.outputs.status }}
+
+  cost:
+    description: 'Training cost in USD'
+    value: ${{ steps.training.outputs.cost }}
+
+  runtime-seconds:
+    description: 'Training runtime in seconds'
+    value: ${{ steps.training.outputs.runtime }}
+
+  artifacts-path:
+    description: 'Local path to downloaded artifacts'
+    value: ${{ steps.training.outputs.artifacts_path }}
+
+  job-arn:
+    description: 'SageMaker job ARN'
+    value: ${{ steps.training.outputs.job_arn }}
+
+  model-url:
+    description: 'S3 URL to model artifacts'
+    value: ${{ steps.training.outputs.model_url }}
+
+  bundle-id:
+    description: 'Uploaded bundle ID'
+    value: ${{ steps.training.outputs.bundle_id }}
+
+  dataset-id:
+    description: 'Dataset ID used for training'
+    value: ${{ steps.training.outputs.dataset_id }}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# IMPLEMENTATION (Composite Action)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+runs:
+  using: 'composite'
+  steps:
+    # ━━━ Step 1: Install pdtrain CLI ━━━
+    - name: Install pdtrain CLI
+      shell: bash
+      run: |
+        echo "::group::Installing pdtrain"
+        pip install -q pdtrain
+        echo "::endgroup::"
+
+    # ━━━ Step 2: Configure pdtrain ━━━
+    - name: Configure pdtrain
+      shell: bash
+      env:
+        PDTRAIN_API_URL: ${{ inputs.api-url }}
+        PDTRAIN_API_KEY: ${{ inputs.api-key }}
+      run: |
+        echo "::group::Configuring pdtrain"
+        pdtrain configure --api-url "$PDTRAIN_API_URL" --api-key "$PDTRAIN_API_KEY"
+        echo "✓ pdtrain configured"
+        echo "::endgroup::"
+
+    # ━━━ Step 3: Validate inputs ━━━
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "::group::Validating inputs"
+
+        # Check execution mode
+        if [ -n "${{ inputs.framework }}" ] && [ -n "${{ inputs.image }}" ]; then
+          echo "::error::Cannot specify both 'framework' and 'image'. Choose Script Mode OR Docker Mode."
+          exit 1
+        fi
+
+        if [ -z "${{ inputs.framework }}" ] && [ -z "${{ inputs.image }}" ]; then
+          echo "::error::Must specify either 'framework' (Script Mode) or 'image' (Docker Mode)."
+          exit 1
+        fi
+
+        # Validate Script Mode requirements
+        if [ -n "${{ inputs.framework }}" ]; then
+          if [ -z "${{ inputs.code-path }}" ]; then
+            echo "::error::Script Mode requires 'code-path'"
+            exit 1
+          fi
+        fi
+
+        echo "✓ Input validation passed"
+        echo "::endgroup::"
+
+    # ━━━ Step 4: Upload bundle (Script Mode only) ━━━
+    - name: Upload training bundle
+      if: inputs.framework != ''
+      id: bundle
+      shell: bash
+      env:
+        CODE_PATH: ${{ inputs.code-path }}
+        BUNDLE_NAME: ${{ inputs.bundle-name }}
+        EXCLUDE: ${{ inputs.exclude-patterns }}
+      run: |
+        echo "::group::Uploading training code bundle"
+
+        # Generate bundle name if not provided
+        if [ -z "$BUNDLE_NAME" ]; then
+          BUNDLE_NAME="${GITHUB_REPOSITORY#*/}-${GITHUB_SHA:0:8}"
+        fi
+
+        echo "Bundle name: $BUNDLE_NAME"
+
+        # Build exclude options
+        EXCLUDE_OPTS=""
+        IFS=',' read -ra PATTERNS <<< "$EXCLUDE"
+        for pattern in "${PATTERNS[@]}"; do
+          EXCLUDE_OPTS="$EXCLUDE_OPTS --exclude ${pattern// /}"
+        done
+
+        # Upload bundle
+        pdtrain bundle upload "$CODE_PATH" \
+          --name "$BUNDLE_NAME" \
+          $EXCLUDE_OPTS \
+          --wait \
+          --json > /tmp/bundle-output.json
+
+        # Extract bundle ID
+        BUNDLE_ID=$(cat /tmp/bundle-output.json | jq -r '.bundle_id')
+        echo "bundle_id=$BUNDLE_ID" >> $GITHUB_OUTPUT
+        echo "✓ Bundle uploaded: $BUNDLE_ID"
+
+        echo "::endgroup::"
+
+    # ━━━ Step 5: Parse hyperparameters/parameters ━━━
+    - name: Parse hyperparameters
+      id: hyperparams
+      shell: bash
+      env:
+        HYPERPARAMETERS: ${{ inputs.hyperparameters }}
+        PARAMETERS: ${{ inputs.parameters }}
+        FRAMEWORK: ${{ inputs.framework }}
+      run: |
+        echo "::group::Processing hyperparameters"
+
+        HYPERPARAM_ARGS=""
+
+        # Use hyperparameters for Script Mode, parameters for Docker Mode
+        if [ -n "$FRAMEWORK" ] && [ -n "$HYPERPARAMETERS" ]; then
+          echo "Processing hyperparameters (Script Mode):"
+          echo "$HYPERPARAMETERS" | while IFS=':' read -r key value; do
+            key=$(echo "$key" | xargs)
+            value=$(echo "$value" | xargs)
+            if [ -n "$key" ] && [ -n "$value" ]; then
+              echo "  $key = $value"
+              HYPERPARAM_ARGS="$HYPERPARAM_ARGS --hyperparameter ${key}=${value}"
+            fi
+          done
+        elif [ -z "$FRAMEWORK" ] && [ -n "$PARAMETERS" ]; then
+          echo "Processing parameters (Docker Mode):"
+          echo "$PARAMETERS" | while IFS=':' read -r key value; do
+            key=$(echo "$key" | xargs)
+            value=$(echo "$value" | xargs)
+            if [ -n "$key" ] && [ -n "$value" ]; then
+              echo "  $key = $value"
+              HYPERPARAM_ARGS="$HYPERPARAM_ARGS --param ${key}=${value}"
+            fi
+          done
+        fi
+
+        echo "hyperparam_args=$HYPERPARAM_ARGS" >> $GITHUB_OUTPUT
+        echo "::endgroup::"
+
+    # ━━━ Step 6: Create training run ━━━
+    - name: Create training run
+      id: create_run
+      shell: bash
+      env:
+        FRAMEWORK: ${{ inputs.framework }}
+        FRAMEWORK_VERSION: ${{ inputs.framework-version }}
+        PYTHON_VERSION: ${{ inputs.python-version }}
+        IMAGE: ${{ inputs.image }}
+        DATASET: ${{ inputs.dataset }}
+        ENTRY_POINT: ${{ inputs.entry-point }}
+        BUNDLE_ID: ${{ steps.bundle.outputs.bundle_id }}
+        HYPERPARAM_ARGS: ${{ steps.hyperparams.outputs.hyperparam_args }}
+      run: |
+        echo "::group::Creating training run"
+
+        # Build command
+        CMD="pdtrain run create"
+
+        # Script Mode
+        if [ -n "$FRAMEWORK" ]; then
+          CMD="$CMD --bundle $BUNDLE_ID"
+          CMD="$CMD --framework $FRAMEWORK"
+          [ -n "$FRAMEWORK_VERSION" ] && CMD="$CMD --framework-version $FRAMEWORK_VERSION"
+          [ -n "$PYTHON_VERSION" ] && CMD="$CMD --python-version $PYTHON_VERSION"
+        fi
+
+        # Docker Mode
+        if [ -n "$IMAGE" ]; then
+          CMD="$CMD --image $IMAGE"
+        fi
+
+        # Common options
+        [ -n "$DATASET" ] && CMD="$CMD --dataset $DATASET"
+        CMD="$CMD --entry $ENTRY_POINT"
+        CMD="$CMD $HYPERPARAM_ARGS"
+        CMD="$CMD --json"
+
+        # Execute
+        echo "Command: $CMD"
+        eval "$CMD" > /tmp/run-output.json
+
+        # Extract run ID
+        RUN_ID=$(cat /tmp/run-output.json | jq -r '.run_id')
+        echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+        echo "✓ Training run created: $RUN_ID"
+
+        echo "::endgroup::"
+
+    # ━━━ Step 7: Submit to SageMaker ━━━
+    - name: Submit to SageMaker
+      id: submit
+      shell: bash
+      env:
+        RUN_ID: ${{ steps.create_run.outputs.run_id }}
+      run: |
+        echo "::group::Submitting to SageMaker"
+        pdtrain run submit "$RUN_ID"
+        echo "✓ Submitted to SageMaker"
+        echo "::endgroup::"
+
+    # ━━━ Step 8: Wait for completion ━━━
+    - name: Wait for training completion
+      if: inputs.wait-for-completion == 'true'
+      id: wait
+      shell: bash
+      env:
+        RUN_ID: ${{ steps.create_run.outputs.run_id }}
+        TIMEOUT: ${{ inputs.timeout-minutes }}
+      run: |
+        echo "::group::Waiting for training completion"
+        pdtrain run watch "$RUN_ID" --timeout $((TIMEOUT * 60))
+        echo "✓ Training completed"
+        echo "::endgroup::"
+
+    # ━━━ Step 9: Get final status ━━━
+    - name: Get training status
+      id: training
+      shell: bash
+      env:
+        RUN_ID: ${{ steps.create_run.outputs.run_id }}
+        DOWNLOAD_ARTIFACTS: ${{ inputs.download-artifacts }}
+        ARTIFACTS_PATH: ${{ inputs.artifacts-path }}
+      run: |
+        echo "::group::Fetching training results"
+
+        # Get run details
+        pdtrain run show "$RUN_ID" --json > /tmp/run-details.json
+
+        # Extract outputs
+        STATUS=$(cat /tmp/run-details.json | jq -r '.status')
+        COST=$(cat /tmp/run-details.json | jq -r '.total_cost_usd // 0')
+        RUNTIME=$(cat /tmp/run-details.json | jq -r '.runtime_seconds // 0')
+        JOB_ARN=$(cat /tmp/run-details.json | jq -r '.job_arn // ""')
+        MODEL_URL=$(cat /tmp/run-details.json | jq -r '.model_url // ""')
+
+        # Set outputs
+        echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        echo "cost=$COST" >> $GITHUB_OUTPUT
+        echo "runtime=$RUNTIME" >> $GITHUB_OUTPUT
+        echo "job_arn=$JOB_ARN" >> $GITHUB_OUTPUT
+        echo "model_url=$MODEL_URL" >> $GITHUB_OUTPUT
+
+        echo "::notice::Training $STATUS - Cost: \$$COST, Runtime: ${RUNTIME}s"
+
+        # Download artifacts
+        if [ "$DOWNLOAD_ARTIFACTS" = "true" ] && [ "$STATUS" = "completed" ]; then
+          echo "Downloading artifacts to $ARTIFACTS_PATH..."
+          pdtrain artifacts download "$RUN_ID" --output "$ARTIFACTS_PATH"
+          echo "artifacts_path=$ARTIFACTS_PATH" >> $GITHUB_OUTPUT
+          echo "✓ Artifacts downloaded"
+        fi
+
+        echo "::endgroup::"
+
+        # Fail workflow if training failed
+        if [ "$STATUS" = "failed" ]; then
+          echo "::error::Training failed"
+          exit 1
+        fi
