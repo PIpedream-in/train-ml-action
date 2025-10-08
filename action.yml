@@ -192,19 +192,8 @@ runs:
         pip install -q pdtrain
         echo "::endgroup::"
 
-    # ━━━ Step 2: Configure pdtrain ━━━
-    - name: Configure pdtrain
-      shell: bash
-      env:
-        PDTRAIN_API_URL: ${{ inputs.api-url }}
-        PDTRAIN_API_KEY: ${{ inputs.api-key }}
-      run: |
-        echo "::group::Configuring pdtrain"
-        pdtrain configure --api-url "$PDTRAIN_API_URL" --api-key "$PDTRAIN_API_KEY"
-        echo "✓ pdtrain configured"
-        echo "::endgroup::"
 
-    # ━━━ Step 3: Validate inputs ━━━
+    # ━━━ Step 2: Validate inputs ━━━
     - name: Validate inputs
       shell: bash
       run: |
@@ -232,12 +221,14 @@ runs:
         echo "✓ Input validation passed"
         echo "::endgroup::"
 
-    # ━━━ Step 4: Upload bundle (Script Mode only) ━━━
+    # ━━━ Step 3: Upload bundle (Script Mode only) ━━━
     - name: Upload training bundle
       if: inputs.framework != ''
       id: bundle
       shell: bash
       env:
+        PDTRAIN_API_URL: ${{ inputs.api-url }}
+        PDTRAIN_API_KEY: ${{ inputs.api-key }}
         CODE_PATH: ${{ inputs.code-path }}
         BUNDLE_NAME: ${{ inputs.bundle-name }}
         EXCLUDE: ${{ inputs.exclude-patterns }}
@@ -272,7 +263,7 @@ runs:
 
         echo "::endgroup::"
 
-    # ━━━ Step 5: Parse hyperparameters/parameters ━━━
+    # ━━━ Step 4: Parse hyperparameters/parameters ━━━
     - name: Parse hyperparameters
       id: hyperparams
       shell: bash
@@ -311,11 +302,13 @@ runs:
         echo "hyperparam_args=$HYPERPARAM_ARGS" >> $GITHUB_OUTPUT
         echo "::endgroup::"
 
-    # ━━━ Step 6: Create training run ━━━
+    # ━━━ Step 5: Create training run ━━━
     - name: Create training run
       id: create_run
       shell: bash
       env:
+        PDTRAIN_API_URL: ${{ inputs.api-url }}
+        PDTRAIN_API_KEY: ${{ inputs.api-key }}
         FRAMEWORK: ${{ inputs.framework }}
         FRAMEWORK_VERSION: ${{ inputs.framework-version }}
         PYTHON_VERSION: ${{ inputs.python-version }}
@@ -360,11 +353,13 @@ runs:
 
         echo "::endgroup::"
 
-    # ━━━ Step 7: Submit to SageMaker ━━━
+    # ━━━ Step 6: Submit to SageMaker ━━━
     - name: Submit to SageMaker
       id: submit
       shell: bash
       env:
+        PDTRAIN_API_URL: ${{ inputs.api-url }}
+        PDTRAIN_API_KEY: ${{ inputs.api-key }}
         RUN_ID: ${{ steps.create_run.outputs.run_id }}
       run: |
         echo "::group::Submitting to SageMaker"
@@ -372,12 +367,14 @@ runs:
         echo "✓ Submitted to SageMaker"
         echo "::endgroup::"
 
-    # ━━━ Step 8: Wait for completion ━━━
+    # ━━━ Step 7: Wait for completion ━━━
     - name: Wait for training completion
       if: inputs.wait-for-completion == 'true'
       id: wait
       shell: bash
       env:
+        PDTRAIN_API_URL: ${{ inputs.api-url }}
+        PDTRAIN_API_KEY: ${{ inputs.api-key }}
         RUN_ID: ${{ steps.create_run.outputs.run_id }}
         TIMEOUT: ${{ inputs.timeout-minutes }}
       run: |
@@ -386,11 +383,13 @@ runs:
         echo "✓ Training completed"
         echo "::endgroup::"
 
-    # ━━━ Step 9: Get final status ━━━
+    # ━━━ Step 8: Get final status ━━━
     - name: Get training status
       id: training
       shell: bash
       env:
+        PDTRAIN_API_URL: ${{ inputs.api-url }}
+        PDTRAIN_API_KEY: ${{ inputs.api-key }}
         RUN_ID: ${{ steps.create_run.outputs.run_id }}
         DOWNLOAD_ARTIFACTS: ${{ inputs.download-artifacts }}
         ARTIFACTS_PATH: ${{ inputs.artifacts-path }}
