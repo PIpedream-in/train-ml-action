@@ -250,14 +250,19 @@ runs:
         done
 
         # Upload bundle
-        pdtrain bundle upload "$CODE_PATH" \
+        OUTPUT=$(pdtrain bundle upload "$CODE_PATH" \
           --name "$BUNDLE_NAME" \
           $EXCLUDE_OPTS \
-          --wait \
-          --json > /tmp/bundle-output.json
+          --wait 2>&1)
 
-        # Extract bundle ID
-        BUNDLE_ID=$(cat /tmp/bundle-output.json | jq -r '.bundle_id')
+        echo "$OUTPUT"
+
+        # Extract bundle ID from output (format: "Bundle ID: <uuid>")
+        BUNDLE_ID=$(echo "$OUTPUT" | sed -n 's/^Bundle ID: \([a-f0-9-]*\)$/\1/p' || echo "")
+        if [ -z "$BUNDLE_ID" ]; then
+          # Fallback: try to find any UUID pattern
+          BUNDLE_ID=$(echo "$OUTPUT" | grep -Eo '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | tail -1 || echo "unknown")
+        fi
         echo "bundle_id=$BUNDLE_ID" >> $GITHUB_OUTPUT
         echo "✓ Bundle uploaded: $BUNDLE_ID"
 
@@ -279,31 +284,31 @@ runs:
         # Use hyperparameters for Script Mode, parameters for Docker Mode
         if [ -n "$FRAMEWORK" ] && [ -n "$HYPERPARAMETERS" ]; then
           echo "Processing hyperparameters (Script Mode):"
-          echo "$HYPERPARAMETERS" | while IFS=':' read -r key value; do
+          while IFS=':' read -r key value; do
             key=$(echo "$key" | xargs)
             value=$(echo "$value" | xargs)
             if [ -n "$key" ] && [ -n "$value" ]; then
               echo "  $key = $value"
               HYPERPARAM_ARGS="$HYPERPARAM_ARGS --hyperparameter ${key}=${value}"
             fi
-          done
+          done <<< "$HYPERPARAMETERS"
         elif [ -z "$FRAMEWORK" ] && [ -n "$PARAMETERS" ]; then
           echo "Processing parameters (Docker Mode):"
-          echo "$PARAMETERS" | while IFS=':' read -r key value; do
+          while IFS=':' read -r key value; do
             key=$(echo "$key" | xargs)
             value=$(echo "$value" | xargs)
             if [ -n "$key" ] && [ -n "$value" ]; then
               echo "  $key = $value"
               HYPERPARAM_ARGS="$HYPERPARAM_ARGS --param ${key}=${value}"
             fi
-          done
+          done <<< "$PARAMETERS"
         fi
 
         echo "hyperparam_args=$HYPERPARAM_ARGS" >> $GITHUB_OUTPUT
         echo "::endgroup::"
 
-    # ━━━ Step 5: Create training run ━━━
-    - name: Create training run
+    # ━━━ Step 5: Create, submit, and run training ━━━
+    - name: Create and submit training run
       id: create_run
       shell: bash
       env:
@@ -317,8 +322,9 @@ runs:
         ENTRY_POINT: ${{ inputs.entry-point }}
         BUNDLE_ID: ${{ steps.bundle.outputs.bundle_id }}
         HYPERPARAM_ARGS: ${{ steps.hyperparams.outputs.hyperparam_args }}
+        WAIT_FOR_COMPLETION: ${{ inputs.wait-for-completion }}
       run: |
-        echo "::group::Creating training run"
+        echo "::group::Creating and submitting training run"
 
         # Build command
         CMD="pdtrain run create"
@@ -340,50 +346,31 @@ runs:
         [ -n "$DATASET" ] && CMD="$CMD --dataset $DATASET"
         CMD="$CMD --entry $ENTRY_POINT"
         CMD="$CMD $HYPERPARAM_ARGS"
-        CMD="$CMD --json"
+
+        # Add submit flag
+        CMD="$CMD --submit"
+
+        # Add wait flag if enabled
+        if [ "$WAIT_FOR_COMPLETION" = "true" ]; then
+          CMD="$CMD --wait"
+        fi
 
         # Execute
         echo "Command: $CMD"
-        eval "$CMD" > /tmp/run-output.json
+        OUTPUT=$(eval "$CMD" 2>&1)
+        echo "$OUTPUT"
 
-        # Extract run ID
-        RUN_ID=$(cat /tmp/run-output.json | jq -r '.run_id')
+        # Extract run ID from output
+        RUN_ID=$(echo "$OUTPUT" | sed -n 's/^Run ID: \([a-f0-9-]*\)$/\1/p' || echo "")
+        if [ -z "$RUN_ID" ]; then
+          RUN_ID=$(echo "$OUTPUT" | grep -Eo '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1 || echo "unknown")
+        fi
         echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
-        echo "✓ Training run created: $RUN_ID"
+        echo "✓ Training run: $RUN_ID"
 
         echo "::endgroup::"
 
-    # ━━━ Step 6: Submit to SageMaker ━━━
-    - name: Submit to SageMaker
-      id: submit
-      shell: bash
-      env:
-        PDTRAIN_API_URL: ${{ inputs.api-url }}
-        PDTRAIN_API_KEY: ${{ inputs.api-key }}
-        RUN_ID: ${{ steps.create_run.outputs.run_id }}
-      run: |
-        echo "::group::Submitting to SageMaker"
-        pdtrain run submit "$RUN_ID"
-        echo "✓ Submitted to SageMaker"
-        echo "::endgroup::"
-
-    # ━━━ Step 7: Wait for completion ━━━
-    - name: Wait for training completion
-      if: inputs.wait-for-completion == 'true'
-      id: wait
-      shell: bash
-      env:
-        PDTRAIN_API_URL: ${{ inputs.api-url }}
-        PDTRAIN_API_KEY: ${{ inputs.api-key }}
-        RUN_ID: ${{ steps.create_run.outputs.run_id }}
-        TIMEOUT: ${{ inputs.timeout-minutes }}
-      run: |
-        echo "::group::Waiting for training completion"
-        pdtrain run watch "$RUN_ID" --timeout $((TIMEOUT * 60))
-        echo "✓ Training completed"
-        echo "::endgroup::"
-
-    # ━━━ Step 8: Get final status ━━━
+    # ━━━ Step 6: Get final status ━━━
     - name: Get training status
       id: training
       shell: bash
@@ -391,20 +378,23 @@ runs:
         PDTRAIN_API_URL: ${{ inputs.api-url }}
         PDTRAIN_API_KEY: ${{ inputs.api-key }}
         RUN_ID: ${{ steps.create_run.outputs.run_id }}
+        BUNDLE_ID: ${{ steps.bundle.outputs.bundle_id }}
+        DATASET_ID: ${{ inputs.dataset }}
         DOWNLOAD_ARTIFACTS: ${{ inputs.download-artifacts }}
         ARTIFACTS_PATH: ${{ inputs.artifacts-path }}
       run: |
         echo "::group::Fetching training results"
 
         # Get run details
-        pdtrain run show "$RUN_ID" --json > /tmp/run-details.json
+        RUN_DETAILS=$(pdtrain run show "$RUN_ID" 2>&1)
+        echo "$RUN_DETAILS"
 
-        # Extract outputs
-        STATUS=$(cat /tmp/run-details.json | jq -r '.status')
-        COST=$(cat /tmp/run-details.json | jq -r '.total_cost_usd // 0')
-        RUNTIME=$(cat /tmp/run-details.json | jq -r '.runtime_seconds // 0')
-        JOB_ARN=$(cat /tmp/run-details.json | jq -r '.job_arn // ""')
-        MODEL_URL=$(cat /tmp/run-details.json | jq -r '.model_url // ""')
+        # Extract outputs from text output
+        STATUS=$(echo "$RUN_DETAILS" | sed -n 's/^Status: \([^ ]*\)$/\1/p' || echo "unknown")
+        COST=$(echo "$RUN_DETAILS" | sed -n 's/^Cost: \$\?\([0-9.]*\)$/\1/p' || echo "0")
+        RUNTIME=$(echo "$RUN_DETAILS" | sed -n 's/^Runtime: \([0-9]*\)$/\1/p' || echo "0")
+        JOB_ARN=$(echo "$RUN_DETAILS" | sed -n 's/^Job ARN: \(.*\)$/\1/p' || echo "")
+        MODEL_URL=$(echo "$RUN_DETAILS" | sed -n 's/^Model URL: \(.*\)$/\1/p' || echo "")
 
         # Set outputs
         echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
@@ -413,6 +403,8 @@ runs:
         echo "runtime=$RUNTIME" >> $GITHUB_OUTPUT
         echo "job_arn=$JOB_ARN" >> $GITHUB_OUTPUT
         echo "model_url=$MODEL_URL" >> $GITHUB_OUTPUT
+        echo "bundle_id=$BUNDLE_ID" >> $GITHUB_OUTPUT
+        echo "dataset_id=$DATASET_ID" >> $GITHUB_OUTPUT
 
         echo "::notice::Training $STATUS - Cost: \$$COST, Runtime: ${RUNTIME}s"
 
